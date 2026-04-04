@@ -3,9 +3,27 @@
 智能章節拆分工具，支援 PDF、DOCX、TXT。  
 UI 設計遵循 **The Precision Curator** 設計系統（Apple 風格、卡片式佈局）。
 
-## 🌐 試玩連結 (Live Demo)
-可以透過以下連結直接使用本工具：
-- [Gradio Live Demo](YOUR_HUGGINGFACE_SPACE_OR_GRADIO_URL_HERE)
+## 🌐 線上分享與部署 (Live Demo & Deployment)
+
+要讓其他人透過網址使用這個工具，您有兩種選擇：
+
+### 方法一：免費永久部署（推薦使用 Hugging Face Spaces）
+1. 註冊並登入 [Hugging Face](https://huggingface.co/)。
+2. 前往 [建立新 Space](https://huggingface.co/new-space)。
+3. 輸入 Space 名稱（例如 `ChapterSplitter`），**Space SDK** 選擇 `Gradio`，然後點擊 **Create Space**。
+4. 在建好的 Space 頁面中，點擊 `Files` -> `Add file` -> `Upload files`。
+5. 將此 GitHub 專案中的 `app.py`、`requirements.txt` 以及整個 `splitter` 資料夾上傳。
+6. 上傳後系統會自動建置，完成後您就會獲得一個專屬的網址（如 `https://huggingface.co/spaces/您的帳號/ChapterSplitter`），可以直接將此網址分享給其他人！
+
+### 方法二：本機端暫時分享（有效期限 72 小時）
+如果您已經在自己的電腦上運行了此程式：
+```bash
+python app.py
+```
+由於程式碼中已經設定了 `share=True`，終端機（Terminal）會印出一行類似這樣的公開網址：
+`Running on public URL: https://xxxxxxxxxxxx.gradio.live`
+您可以直接把這個網址傳給其他人，他們就能使用。
+> ⚠️ **注意**：此網址僅在您電腦開機且程式執行期間有效，最長維持 72 小時。
 
 
 ---
