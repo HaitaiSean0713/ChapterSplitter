@@ -3,6 +3,11 @@
 智能章節拆分工具，支援 PDF、DOCX、TXT。  
 UI 設計遵循 **The Precision Curator** 設計系統（Apple 風格、卡片式佈局）。
 
+## 🌐 試玩連結 (Live Demo)
+可以透過以下連結直接使用本工具：
+- [Gradio Live Demo](YOUR_HUGGINGFACE_SPACE_OR_GRADIO_URL_HERE)
+
+
 ---
 
 ## 🌟 功能特點
