@@ -2,8 +2,8 @@ name: Sync to Hugging Face Hub
 
 on:
   push:
-    branches: [main] # 當推送到 main 分支時觸發
-  workflow_dispatch: # 允許在 GitHub 網頁手動點擊觸發
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   sync-to-hub:
@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          lfs: true # 如果你的專案有大檔案 (LFS)，請設為 true
+          lfs: true
 
       - name: Push to Hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push https://huggingface.co/spaces/haitai0713/ChapterSplitter
+          git push -f https://haitai0713:$HF_TOKEN@huggingface.co/spaces/haitai0713/ChapterSplitter main
