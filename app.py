@@ -275,14 +275,13 @@ def detect_chapters(file_obj, progress=gr.Progress()):
     global _chapters, _file_path, _file_type
 
     if file_obj is None:
-        yield (
+        return (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(choices=[], value=[]),
             gr.update(value='<p style="color:#ff6b6b;text-align:center;margin-top:8px;font-size:13px;font-weight:700;">❌ 請加上檔案</p>', visible=True),
             gr.update(value="")
         )
-        return
     
     # Step 1: 讀取檔案
     progress(0, desc="📂 正在讀取檔案...")
@@ -292,35 +291,29 @@ def detect_chapters(file_obj, progress=gr.Progress()):
     file_type = EXT_MAP.get(ext)
 
     if file_type is None:
-        yield (
+        return (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(choices=[], value=[]),
             gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 不支援的格式「{ext}」</p>', visible=True),
             gr.update(value="")
         )
-        return
         
     try:
         file_size_mb = os.path.getsize(path) / (1024 * 1024)
         
         # Step 2: 分析檔案
         progress(0.2, desc=f"🔍 正在分析 {file_type.upper()} 檔案...")
-        yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
-
+        # ✅ 已刪除拖慢速度的 yield
         
         if file_type == "pdf":
             progress(0.4, desc="📖 偵測 PDF 章節...")
-            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
-
             chapters = detect_chapters_pdf(path)
         elif file_type == "docx":
             progress(0.4, desc="📄 偵測 Word 章節...")
-            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
             chapters = detect_chapters_docx(path)
         else:
             progress(0.4, desc="📝 偵測文字章節...")
-            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
             chapters = detect_chapters_txt(path)
 
         # Step 3: 完成
@@ -349,26 +342,25 @@ def detect_chapters(file_obj, progress=gr.Progress()):
         </div>
         '''
 
-        yield (
+        # ✅ 改回 return，一次性更新 UI
+        return (
             gr.update(visible=False),
             gr.update(visible=True),
             gr.update(choices=labeled, value=labeled),
             gr.update(value="", visible=False),
             gr.update(value=stats_html)
         )
-        return
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        yield (
+        return (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(choices=[], value=[]),
             gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 發生錯誤：{e}</p>', visible=True),
             gr.update(value="")
         )
-        return
         
 def select_all():
     global _chapters
@@ -389,17 +381,15 @@ def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
     global _chapters, _file_path, _file_type
 
     if not selected_labels:
-        yield(
+        return (
             gr.update(),
             gr.update(value='<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 請至少勾選一個章節。</p>', visible=True)
         )
-        return
         
     try:
         # Step 1: 準備合併
         progress(0, desc="📋 正在準備合併...")
-        yield (gr.update(), gr.update())  # 推送進度
-
+        # ✅ 已刪除 yield
         
         selected_titles = []
         for label in selected_labels:
@@ -409,7 +399,6 @@ def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
 
         # Step 2: 合併檔案
         progress(0.2, desc=f"🔨 正在合併 {len(selected_titles)} 個章節...")
-        yield (gr.update(), gr.update())  # 推送進度
 
         data, mime = merge_selected(_file_path, _file_type, _chapters, selected_titles, int(page_shift))
 
@@ -423,7 +412,6 @@ def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
         # Step 3: PDF 壓縮
         if suffix == ".pdf":
             progress(0.6, desc="🗜️ 正在壓縮 PDF...")
-            yield (gr.update(), gr.update())  # 推送進度
 
             try:
                 doc = fitz.open(stream=data, filetype="pdf")
@@ -441,8 +429,6 @@ def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
 
         # Step 4: 儲存檔案
         progress(0.9, desc="💾 正在儲存檔案...")
-        yield (gr.update(), gr.update())  # 推送進度
-
         
         if len(selected_titles) == 1:
             safe_title = re.sub(r'[\\/:*?"<>|]', '_', selected_titles[0][:50]).strip()
@@ -462,23 +448,21 @@ def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
         # Step 5: 完成
         progress(1.0, desc="✅ 合併完成！")
 
-        yield (
+        return (
             gr.update(value=out_path, visible=True),
             gr.update(
                 value=f'<p style="color:#34d058;text-align:center;font-size:13px;font-weight:700;">✓ 合併與壓縮完成！(檔案大小：{final_size_mb:.1f} MB)</p>', 
                 visible=True
             )
         )
-        return
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        yield (
+        return (
             gr.update(visible=False),
             gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 錯誤：{str(e)}</p>', visible=True)
         )
-        return
 
 def reset_to_start():
     global _chapters, _file_path, _file_type
