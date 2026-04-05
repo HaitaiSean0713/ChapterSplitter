@@ -1,18 +1,19 @@
 """
-Chapter Splitter Tool — Gradio App
-設計系統：The Precision Curator (依 DESIGN.md & 使用者指定 Tailwind UI)
+Chapter Splitter Tool -- Gradio App
+Dark Mode Edition
 """
 import os
 import tempfile
 import gradio as gr
 import re
+import fitz  # 這是 PyMuPDF 的套件名稱
 
 from splitter.pdf_splitter import detect_chapters_pdf
 from splitter.docx_splitter import detect_chapters_docx
 from splitter.txt_splitter import detect_chapters_txt
 from splitter.merger import merge_selected
 
-# ── Global state ────────────────────────────────────────────────
+# -- Global state -------------------------------------------------------
 _chapters: list[dict] = []
 _file_path: str = ""
 _file_type: str = ""
@@ -22,116 +23,106 @@ EXT_MAP = {
     ".docx": "docx",
     ".doc": "docx",
     ".txt": "txt",
+    ".md": "txt",
 }
 
-# ── Design Tokens & Tailwind Config ──────────────────────────────
+# -- Design Tokens (Dark Mode) ------------------------------------------
 HEAD = """
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script>
-function _applyTailwindConfig() {
-    tailwind.config = {
-        darkMode: "class",
-        theme: {
-            extend: {
-                colors: {
-                    "primary-container": "#0071e3",
-                    "inverse-primary": "#abc7ff",
-                    "on-secondary-container": "#3e5682",
-                    "tertiary-fixed-dim": "#ffb693",
-                    "error": "#ba1a1a",
-                    "tertiary-container": "#c25100",
-                    "on-surface": "#1b1b1d",
-                    "outline": "#717785",
-                    "surface-container-highest": "#e4e2e4",
-                    "on-tertiary-fixed-variant": "#7a3000",
-                    "surface-tint": "#005cbb",
-                    "surface-container-high": "#eae7ea",
-                    "outline-variant": "#c1c6d6",
-                    "error-container": "#ffdad6",
-                    "secondary-container": "#b4ccff",
-                    "on-background": "#1b1b1d",
-                    "primary": "#0059b5",
-                    "primary-fixed": "#d7e2ff",
-                    "surface-container-lowest": "#ffffff",
-                    "on-secondary": "#ffffff",
-                    "surface-container-low": "#f6f3f5",
-                    "on-primary": "#ffffff",
-                    "on-primary-container": "#fcfbff",
-                    "inverse-surface": "#303032",
-                    "surface-bright": "#fcf8fb",
-                    "on-tertiary": "#ffffff",
-                    "on-error-container": "#93000a",
-                    "secondary-fixed": "#d7e2ff",
-                    "on-primary-fixed": "#001b3f",
-                    "surface": "#fcf8fb",
-                    "on-error": "#ffffff",
-                    "on-tertiary-fixed": "#341000",
-                    "surface-dim": "#dcd9dc",
-                    "secondary": "#465e8b",
-                    "secondary-fixed-dim": "#aec7f9",
-                    "background": "#fcf8fb",
-                    "on-primary-fixed-variant": "#00458f",
-                    "on-secondary-fixed-variant": "#2e4772",
-                    "inverse-on-surface": "#f3f0f2",
-                    "primary-fixed-dim": "#abc7ff",
-                    "tertiary-fixed": "#ffdbcb",
-                    "on-tertiary-container": "#fffaf9",
-                    "on-surface-variant": "#414753",
-                    "on-secondary-fixed": "#001b3f",
-                    "surface-variant": "#e4e2e4",
-                    "surface-container": "#f0edef",
-                    "tertiary": "#9b3f00"
-                },
-                fontFamily: {
-                    headline: ["Inter", "sans-serif"],
-                    body: ["Inter", "sans-serif"]
+// 等待 Tailwind 載入後再設定 config
+(function initTailwind() {
+    if (typeof tailwind !== 'undefined' && tailwind.config) {
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-container": "#4da3ff",
+                        "primary": "#82c0ff",
+                        "surface": "#111318",
+                        "on-surface": "#e3e2e6",
+                        "secondary": "#9ab4d4",
+                        "surface-container-low": "#1e2128",
+                        "surface-container-lowest": "#191c23"
+                    },
+                    fontFamily: {
+                        headline: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+                        body: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"]
+                    }
                 }
             }
-        }
-    };
-}
+        };
+        console.log('✅ Tailwind config 設定完成');
+    } else {
+        setTimeout(initTailwind, 50);
+    }
+})();
 </script>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries" onload="_applyTailwindConfig()"></script>
 """
 
 CSS = """
 body, .gradio-container {
-    background-color: #fcf8fb !important;
-    font-family: 'Inter', sans-serif !important;
-    color: #1b1b1d !important;
+    background-color: #111318 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif !important;
+    color: #e3e2e6 !important;
 }
-.material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
-}
+
+[class*="max-w-"] { width: 100% !important; margin: 0 auto !important; }
+.fixed { position: fixed !important; }
+
 .apple-shadow {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4) !important;
 }
 .glass-header {
-    background-color: rgba(255, 255, 255, 0.8) !important;
+    background-color: rgba(17, 19, 24, 0.85) !important;
+    backdrop-filter: blur(20px) !important;
+}
+.glass-nav {
+    background-color: rgba(17, 19, 24, 0.85) !important;
     backdrop-filter: blur(20px) !important;
 }
 .gradio-container {
     padding: 0 !important;
     max-width: 100% !important;
 }
-
-/* Hide default gradio padding/borders around main container */
 #main-app { padding: 0 !important; }
 
-/* Custom grad style for checkboxes */
+/* Upload zone */
+#upload-zone {
+    background: #191c23 !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    border-radius: 16px !important;
+}
+
+#upload-zone .upload-container {
+    border: none !important;
+    background: transparent !important;
+}
+
+.gradio-container .file-preview,
+.gradio-container label.block {
+    color: #9ab4d4 !important;
+}
+
+/* Chapter checkboxes */
 #chapter-list {
     background: transparent !important;
     border: none !important;
     gap: 8px !important;
     display: flex !important;
     flex-direction: column !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
 }
+
 #chapter-list label {
-    background: #ffffff !important;
+    background: #191c23 !important;
     border-radius: 8px !important;
     padding: 20px !important;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3) !important;
     transition: all 0.2s !important;
     display: flex !important;
     align-items: center !important;
@@ -139,20 +130,25 @@ body, .gradio-container {
     width: 100% !important;
     cursor: pointer !important;
 }
+
 #chapter-list label:hover {
     transform: scale(1.01) !important;
+    background: #22273a !important;
 }
+
 #chapter-list label:has(input:checked) {
-    background: #F0F7FF !important;
-    border-left: 3px solid #0071e3 !important;
+    background: #0f1e36 !important;
+    border-left: 3px solid #4da3ff !important;
 }
+
 #chapter-list input[type="checkbox"] {
     appearance: none;
     -webkit-appearance: none;
     width: 22px !important;
     height: 22px !important;
     border-radius: 50% !important;
-    border: 1.5px solid #d1d1d6 !important;
+    border: 1.5px solid #3a3d4a !important;
+    background: #1e2128 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -160,119 +156,220 @@ body, .gradio-container {
     transition: all 0.2s ease !important;
     flex-shrink: 0 !important;
 }
+
 #chapter-list input[type="checkbox"]:checked {
-    background-color: #0071e3 !important;
-    border-color: #0071e3 !important;
+    background-color: #4da3ff !important;
+    border-color: #4da3ff !important;
 }
+
 #chapter-list input[type="checkbox"]:checked::after {
-    content: 'check' !important;
-    font-family: 'Material Symbols Outlined' !important;
+    content: '✓' !important;
     font-size: 14px !important;
-    color: white !important;
+    color: #111318 !important;
     font-weight: bold !important;
 }
+
 #chapter-list span {
     font-size: 15px !important;
     font-weight: 700 !important;
-    color: #1b1b1d !important;
+    color: #e3e2e6 !important;
 }
 
-/* Base resets for Gradio inner elements */
-#upload-zone .upload-container {
-    border: none !important;
-    background: transparent !important;
-}
 #status-selected span {
     font-size: 13px !important;
-    color: #465e8b !important;
+    color: #9ab4d4 !important;
+}
+
+/* Buttons */
+#btn-detect button, #btn-merge button {
+    background: #1a4a8a !important;
+    color: #82c0ff !important;
+    font-size: 16px !important;
+}
+
+#btn-download button {
+    background: #1a4d2a !important;
+    color: #34d058 !important;
+    font-size: 16px !important;
+}
+
+#btn-reset button {
+    background: #1e2128 !important;
+    color: #e3e2e6 !important;
+    font-size: 15px !important;
+}
+
+#btn-select-all button, #btn-clear-all button {
+    color: #4da3ff !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.gradio-container input[type=range] {
+    accent-color: #4da3ff !important;
+}
+
+section span {
+    color: #e3e2e6 !important;
+}
+
+/* Layout fixes */
+#main-content-area {
+    padding-bottom: 40px !important;
+}
+
+#bottom-action-bar {
+    background: transparent !important;
+    border-top: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+
+#bottom-inner {
+    padding: 0 !important;
+}
+
+footer {
+    display: none !important;
+}
+
+/* ✅ 修正：移除對 .wrap 和 .main 的 display: block 強制覆寫 */
+body, #root, .gradio-container {
+    min-height: fit-content !important; 
+    height: auto !important;
+    display: block !important;
+}
+
+.gradio-container {
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+}
+/* ✅ 修正：Gradio 實際使用的進度條 Class */
+.progress-text {
+    color: #e3e2e6 !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    z-index: 100 !important;
+}
+
+.progress-level {
+    background: linear-gradient(90deg, #4da3ff, #82c0ff) !important;
+}
+
+/* 確保進度條容器在深色模式下的背景 */
+.wrap > div[class*="progress"] {
+    background: rgba(30, 33, 40, 0.9) !important;
+    backdrop-filter: blur(10px) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
 }
 """
 
-def _get_ext(path: str) -> str:
+def _get_ext(path):
     _, ext = os.path.splitext(path)
     return ext.lower()
 
-def detect_chapters(file_obj):
+def detect_chapters(file_obj, progress=gr.Progress()): 
+    """偵測章節（帶進度條）"""
     global _chapters, _file_path, _file_type
-    
+
     if file_obj is None:
-        return (
-            gr.update(visible=True),   # start screen
-            gr.update(visible=False),  # results screen
-            gr.update(choices=[], value=[]),                        # checkboxes
-            gr.update(value='<p class="text-error text-center mt-2 text-sm font-bold">❌ 請加上檔案</p>', visible=True), # error text
-            gr.update(value="")                         # stats html
+        yield (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(choices=[], value=[]),
+            gr.update(value='<p style="color:#ff6b6b;text-align:center;margin-top:8px;font-size:13px;font-weight:700;">❌ 請加上檔案</p>', visible=True),
+            gr.update(value="")
         )
-        
+        return
+    
+    # Step 1: 讀取檔案
+    progress(0, desc="📂 正在讀取檔案...")
+    
     path = file_obj.name if hasattr(file_obj, "name") else str(file_obj)
     ext = _get_ext(path)
     file_type = EXT_MAP.get(ext)
 
     if file_type is None:
-        return (
+        yield (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(choices=[], value=[]),
-            gr.update(value=f'<p class="text-error text-center mt-2 text-sm font-bold">❌ 不支援的格式「{ext}」</p>', visible=True),
+            gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 不支援的格式「{ext}」</p>', visible=True),
             gr.update(value="")
         )
+        return
         
     try:
+        file_size_mb = os.path.getsize(path) / (1024 * 1024)
+        
+        # Step 2: 分析檔案
+        progress(0.2, desc=f"🔍 正在分析 {file_type.upper()} 檔案...")
+        yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
+
+        
         if file_type == "pdf":
+            progress(0.4, desc="📖 偵測 PDF 章節...")
+            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
+
             chapters = detect_chapters_pdf(path)
         elif file_type == "docx":
+            progress(0.4, desc="📄 偵測 Word 章節...")
+            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
             chapters = detect_chapters_docx(path)
         else:
+            progress(0.4, desc="📝 偵測文字章節...")
+            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())  # 推送進度
             chapters = detect_chapters_txt(path)
 
+        # Step 3: 完成
+        progress(1.0, desc="✅ 偵測完成！")
+        
         _chapters = chapters
         _file_path = path
         _file_type = file_type
 
         labeled = [f"{i+1}. {c['title']}" for i, c in enumerate(chapters)]
-        
-        # Build Stats HTML
-        file_size_mb = os.path.getsize(path) / (1024 * 1024)
+
         stats_html = f'''
-        <div class="bg-surface-container-lowest rounded-lg apple-shadow p-6 flex flex-col gap-4">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <span class="text-[17px] font-bold">📄 偵測完成</span>
-                </div>
-                <span class="px-4 py-1.5 rounded-full text-white text-[13px] font-bold" style="background-color: #0059b5; color: white !important;">共 {len(labeled)} 個章節</span>
+        <div style="background:#191c23;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.4);padding:24px;display:flex;flex-direction:column;gap:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:17px;font-weight:700;color:#e3e2e6;">📖 偵測完成</span>
+                <span style="padding:6px 16px;border-radius:20px;background:#1a3a6e;color:#82c0ff;font-size:13px;font-weight:700;">共 {len(labeled)} 個章節</span>
             </div>
-            <div class="flex flex-wrap gap-2">
-                <div class="bg-surface-container-low px-3 py-1.5 rounded-[8px] flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[16px] text-secondary" data-icon="description">description</span>
-                    <span class="text-[12px] text-secondary font-medium">偵測方式：自動擷取</span>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                <div style="background:#1e2128;padding:6px 12px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+                    <span style="font-size:12px;color:#9ab4d4;font-weight:500;">📊 檔案大小：{file_size_mb:.1f} MB</span>
                 </div>
-                <div class="bg-surface-container-low px-3 py-1.5 rounded-[8px] flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[16px] text-secondary" data-icon="database">database</span>
-                    <span class="text-[12px] text-secondary font-medium">檔案大小：{file_size_mb:.1f} MB</span>
+                <div style="background:#1e2128;padding:6px 12px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+                    <span style="font-size:12px;color:#9ab4d4;font-weight:500;">📑 格式：{file_type.upper()}</span>
                 </div>
             </div>
         </div>
         '''
 
-        return (
-            gr.update(visible=False), # hide start screen
-            gr.update(visible=True),  # show results screen
-            gr.update(choices=labeled, value=labeled), # checkboxes selected by default
+        yield (
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(choices=labeled, value=labeled),
             gr.update(value="", visible=False),
             gr.update(value=stats_html)
         )
+        return
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return (
+        yield (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(choices=[], value=[]),
-            gr.update(value=f'<p class="text-error text-center mt-2 text-sm font-bold">❌ 發生錯誤：{e}</p>', visible=True),
+            gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 發生錯誤：{e}</p>', visible=True),
             gr.update(value="")
         )
-
+        return
+        
 def select_all():
     global _chapters
     labeled = [f"{i+1}. {c['title']}" for i, c in enumerate(_chapters)]
@@ -283,25 +380,38 @@ def clear_all():
 
 def update_selection_count(selected):
     global _chapters
-    return f'<span class="text-secondary text-[13px] font-bold ml-auto pr-2">已選 {len(selected)} / {len(_chapters)} 章節</span>'
+    if selected is None:
+        selected = []
+    return f'<span style="color:#9ab4d4;font-size:13px;font-weight:700;margin-left:auto;padding-right:8px;">已選 {len(selected)} / {len(_chapters)} 章節</span>'
 
-def download_chapters(selected_labels: list[str], page_shift: float):
+def download_chapters(selected_labels, page_shift, progress=gr.Progress()):
+    """下載章節（帶進度條）"""
     global _chapters, _file_path, _file_type
-    print(f"[DEBUG] download_chapters called with {len(selected_labels)} labels, page_shift={page_shift}")
 
     if not selected_labels:
-        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(value='<p class="text-error text-center mt-2 text-sm font-bold">❌ 請至少勾選一個章節。</p>', visible=True)
-
+        yield(
+            gr.update(),
+            gr.update(value='<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 請至少勾選一個章節。</p>', visible=True)
+        )
+        return
+        
     try:
+        # Step 1: 準備合併
+        progress(0, desc="📋 正在準備合併...")
+        yield (gr.update(), gr.update())  # 推送進度
+
+        
         selected_titles = []
         for label in selected_labels:
             dot_pos = label.index(". ")
             idx = int(label[:dot_pos]) - 1
             selected_titles.append(_chapters[idx]["title"])
 
-        print(f"[DEBUG] merging: {selected_titles}")
+        # Step 2: 合併檔案
+        progress(0.2, desc=f"🔨 正在合併 {len(selected_titles)} 個章節...")
+        yield (gr.update(), gr.update())  # 推送進度
+
         data, mime = merge_selected(_file_path, _file_type, _chapters, selected_titles, int(page_shift))
-        print(f"[DEBUG] merge done, data size={len(data)}, mime={mime}")
 
         ext_map = {
             "application/pdf": ".pdf",
@@ -310,6 +420,30 @@ def download_chapters(selected_labels: list[str], page_shift: float):
         }
         suffix = ext_map.get(mime, ".bin")
 
+        # Step 3: PDF 壓縮
+        if suffix == ".pdf":
+            progress(0.6, desc="🗜️ 正在壓縮 PDF...")
+            yield (gr.update(), gr.update())  # 推送進度
+
+            try:
+                doc = fitz.open(stream=data, filetype="pdf")
+                compressed_data = doc.write(garbage=4, deflate=True)
+                doc.close()
+                
+                original_size_mb = len(data) / (1024 * 1024)
+                compressed_size_mb = len(compressed_data) / (1024 * 1024)
+                compression_ratio = (1 - compressed_size_mb / original_size_mb) * 100
+                
+                print(f"✅ PDF 壓縮成功：{original_size_mb:.1f} MB → {compressed_size_mb:.1f} MB (節省 {compression_ratio:.1f}%)")
+                data = compressed_data
+            except Exception as compress_err:
+                print(f"⚠️ 壓縮失敗，使用原始檔案：{compress_err}")
+
+        # Step 4: 儲存檔案
+        progress(0.9, desc="💾 正在儲存檔案...")
+        yield (gr.update(), gr.update())  # 推送進度
+
+        
         if len(selected_titles) == 1:
             safe_title = re.sub(r'[\\/:*?"<>|]', '_', selected_titles[0][:50]).strip()
             out_filename = f"{safe_title}{suffix}"
@@ -319,23 +453,32 @@ def download_chapters(selected_labels: list[str], page_shift: float):
         out_dir = os.path.abspath("outputs")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, out_filename)
+        
         with open(out_path, "wb") as f:
             f.write(data)
-        print(f"[DEBUG] file saved to: {out_path}")
-        print(f"[DEBUG] Merge successful.")
 
-        return (
-            gr.update(value=out_path, visible=True), # btn_final_download
-            gr.update(value='<p class="text-[#34C759] text-center mt-2 text-sm font-bold">✅ 合併完成！檔案已準備就緒，請點擊下方下載按鈕。</p>', visible=True) # show success text
+        final_size_mb = len(data) / (1024 * 1024)
+        
+        # Step 5: 完成
+        progress(1.0, desc="✅ 合併完成！")
+
+        yield (
+            gr.update(value=out_path, visible=True),
+            gr.update(
+                value=f'<p style="color:#34d058;text-align:center;font-size:13px;font-weight:700;">✓ 合併與壓縮完成！(檔案大小：{final_size_mb:.1f} MB)</p>', 
+                visible=True
+            )
         )
+        return
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return (
-            gr.update(visible=False), 
-            gr.update(value=f'<p class="text-error text-center mt-2 text-sm font-bold">❌ 錯誤：{str(e)}</p>', visible=True)
+        yield (
+            gr.update(visible=False),
+            gr.update(value=f'<p style="color:#ff6b6b;text-align:center;font-size:13px;font-weight:700;">❌ 錯誤：{str(e)}</p>', visible=True)
         )
+        return
 
 def reset_to_start():
     global _chapters, _file_path, _file_type
@@ -343,158 +486,166 @@ def reset_to_start():
     _file_path = ""
     _file_type = ""
     return (
-        gr.update(visible=True),   # start screen
-        gr.update(visible=False),  # results screen
-        gr.update(value=None)      # reset file upload
+        gr.update(visible=True),
+        gr.update(visible=False),
+        gr.update(value=None)
     )
 
-def reset_to_results():
-    return (
-        gr.update(visible=False),  # start screen
-        gr.update(visible=True),   # results screen
-        gr.update(visible=False)   # success screen
-    )
+# -- UI Construction ----------------------------------------------------
 
-
-# ── UI Construction ──────────────────────────────────────────────
-
-with gr.Blocks(css=CSS, head=HEAD, theme=gr.themes.Base()) as demo:
-    
-    # === SCREEN 1: Start / Tool Screen ===
+with gr.Blocks(css=CSS, head=HEAD, theme=gr.themes.Default()) as demo:
     with gr.Column(elem_id="screen-start") as screen_start:
-        
-        # Header
         gr.HTML('''
-        <header class="w-full glass-nav flex flex-col items-center justify-center py-4 px-6 border-b border-outline-variant/15">
+        <header class="w-full glass-nav flex flex-col items-center justify-center py-4 px-6" style="border-bottom:1px solid #2a2d38;">
             <div class="flex flex-col items-center text-center">
-                <h1 class="text-[20px] font-bold text-[#1b1b1d] tracking-tight">章節拆分工具</h1>
-                <p class="text-sm font-light text-[#414753] mt-0.5">支援 PDF・Word・Markdown</p>
+                <h1 style="font-size:20px;font-weight:700;color:#e3e2e6;letter-spacing:-0.3px;">章節拆分工具</h1>
+                <p style="font-size:14px;font-weight:300;color:#9ab4d4;margin-top:2px;">支援 PDF・Word・Markdown</p>
             </div>
         </header>
         ''')
-        
-        with gr.Column(elem_classes="max-w-[640px] mx-auto pt-8 pb-24 px-6 min-h-screen flex flex-col gap-8 w-full"):
-            
-            # Warning Card
+
+        with gr.Column(elem_classes="max-w-[640px] mx-auto pt-8 pb-4 px-6 flex flex-col gap-8 w-full"):
             gr.HTML('''
-            <section class="bg-[#FFF9E6] p-6 rounded-[16px] flex flex-col gap-4">
-                <div class="flex items-center gap-2 text-[#9B3F00]">
-                    <span class="material-symbols-outlined" data-icon="warning" style="font-variation-settings: 'FILL' 1;">warning</span>
-                    <h2 class="font-bold">使用提醒</h2>
+            <section style="background:#1e1a0e;padding:24px;border-radius:16px;display:flex;flex-direction:column;gap:16px;border:1px solid #3a2e00;">
+                <div style="display:flex;align-items:center;gap:8px;color:#f5c842;">
+                    <span style="font-size:20px;">⚠</span>
+                    <h2 style="font-weight:700;color:#f5c842;">使用提醒</h2>
                 </div>
-                <div class="grid grid-cols-1 gap-y-3">
-                    <div class="flex items-start gap-3 text-sm text-[#414753]">
-                        <span class="material-symbols-outlined text-green-600 text-[18px]" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                <div style="display:grid;gap:12px;">
+                    <div style="display:flex;align-items:flex-start;gap:12px;font-size:14px;color:#b0b8c8;">
+                        <span style="color:#34d058;font-size:18px;">✓</span>
                         <span>大學課本 PDF（含目錄書籤）</span>
                     </div>
-                    <div class="flex items-start gap-3 text-sm text-[#414753]">
-                        <span class="material-symbols-outlined text-green-600 text-[18px]" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                    <div style="display:flex;align-items:flex-start;gap:12px;font-size:14px;color:#b0b8c8;">
+                        <span style="color:#34d058;font-size:18px;">✓</span>
                         <span>有標題樣式的 Word 文件（.docx）</span>
                     </div>
-                    <div class="flex items-start gap-3 text-sm text-[#414753]">
-                        <span class="material-symbols-outlined text-green-600 text-[18px]" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                    <div style="display:flex;align-items:flex-start;gap:12px;font-size:14px;color:#b0b8c8;">
+                        <span style="color:#34d058;font-size:18px;">✓</span>
                         <span>Markdown 文件（.md）</span>
-                    </div>
-                    <div class="flex items-start gap-3 text-sm text-[#414753]">
-                        <span class="material-symbols-outlined text-red-600 text-[18px]" data-icon="cancel" style="font-variation-settings: 'FILL' 1;">cancel</span>
-                        <span>掃描版圖片 PDF</span>
-                    </div>
-                    <div class="flex items-start gap-3 text-sm text-[#414753]">
-                        <span class="material-symbols-outlined text-red-600 text-[18px]" data-icon="cancel" style="font-variation-settings: 'FILL' 1;">cancel</span>
-                        <span>無章節結構的純文字</span>
                     </div>
                 </div>
             </section>
             ''')
-            
-            # Upload Card
-            with gr.Column(elem_id="upload-zone", elem_classes="bg-white p-4 rounded-[16px] shadow-[0_2px_12px_rgba(27,27,29,0.08)]"):
-                file_upload = gr.File(label="拖曳檔案至此 或點擊上傳", file_types=[".pdf", ".docx", ".doc", ".txt"], type="filepath")
-                detect_btn = gr.Button("🔍 開始偵測章節", elem_classes="w-full mt-4 h-[52px] bg-[#0059b5] text-white font-bold rounded-[14px] shadow-lg flex items-center justify-center gap-2 hover:bg-[#004fa0] border-none")
+
+            with gr.Column(elem_classes="p-4 rounded-[16px]"):
+                file_upload = gr.File(
+                    label="拖曳檔案至此 或點擊上傳",
+                    file_types=[".md", ".pdf", ".docx", ".doc", ".txt"],
+                    type="filepath",
+                    elem_id="upload-zone"
+                )
+                detect_btn = gr.Button(
+                    "🔍 開始偵測章節",
+                    elem_id="btn-detect",
+                    elem_classes="w-full mt-4 h-[52px] font-bold rounded-[14px] border-none",
+                )
                 error_msg_start = gr.HTML("", visible=False)
 
-
-
-
-    # === SCREEN 2: Results Screen ===
     with gr.Column(elem_id="screen-results", visible=False) as screen_results:
-        
-        # Header Nav
         gr.HTML('''
-        <header class="fixed top-0 w-full z-50 glass-header border-b border-zinc-200 shadow-sm bg-white/80">
-            <div class="flex items-center px-4 h-16 w-full max-w-7xl mx-auto justify-between">
-                <div class="flex items-center gap-2">
-                    <h1 class="font-headline font-bold text-[20px] tracking-tight text-on-surface ml-2">章節拆分工具</h1>
-                </div>
+        <header class="fixed top-0 w-full z-50 glass-header" style="border-bottom:1px solid #2a2d38;box-shadow:0 1px 16px rgba(0,0,0,0.5);">
+            <div style="display:flex;align-items:center;padding:0 16px;height:64px;max-width:56rem;margin:0 auto;justify-content:space-between;">
+                <h1 style="font-weight:700;font-size:20px;letter-spacing:-0.3px;color:#e3e2e6;margin-left:8px;">章節拆分工具</h1>
             </div>
         </header>
         ''')
-        
-        with gr.Column(elem_classes="pt-24 pb-48 px-4 max-w-2xl mx-auto w-full"):
-            
-            stats_html = gr.HTML("")
-            
-            with gr.Row(elem_classes="mb-4 flex flex-row items-center justify-start px-2 mt-4"):
-                btn_select_all = gr.Button("全選", elem_classes="text-[#0059b5] bg-transparent shadow-none border-none hover:opacity-70 font-bold text-[15px]", scale=0, min_width=80)
-                btn_clear_all = gr.Button("全取消", elem_classes="text-[#0059b5] bg-transparent shadow-none border-none hover:opacity-70 font-bold text-[15px]", scale=0, min_width=80)
-                status_selected = gr.HTML('<span class="text-secondary text-[13px] font-bold ml-auto pr-2">已選 0 章節</span>', elem_id="status-selected")
-                
-            chapter_checkboxes = gr.CheckboxGroup(label="", choices=[], elem_id="chapter-list", container=False)
-            
-            # Form padding
-            gr.HTML('<div class="h-10"></div>')
-            
-            # Bottom Fixed Action Bar
-            with gr.Column(elem_classes="fixed bottom-0 left-0 w-full bg-white border-t border-zinc-200 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] z-50 pb-6 pt-4 px-6"):
-                page_shift_slider = gr.Slider(
-                    minimum=-2, maximum=2, step=1, value=-1, 
-                    label="封面頁校正 (如果這章的封面出現在上一章，請改為 0 或 -2)",
-                    elem_classes="mb-3 max-w-2xl mx-auto"
-                )
-                btn_merge = gr.Button("🔨 開始合併已選章節", elem_classes="w-full max-w-2xl mx-auto h-[52px] bg-[#0059b5] text-white font-bold rounded-[14px] shadow-lg flex items-center justify-center hover:bg-[#004fa0] border-none")
-                btn_final_download = gr.DownloadButton("📥 下載合併後的檔案", visible=False, elem_classes="w-full max-w-2xl mx-auto h-[52px] bg-[#34C759] text-white font-bold rounded-[14px] shadow-lg flex items-center justify-center hover:bg-[#28a745] border-none mt-3")
-                error_msg_results = gr.HTML("", visible=False)
-                
-                with gr.Row(elem_classes="max-w-2xl mx-auto mt-3 gap-3 w-full"):
-                    btn_process_another = gr.Button("處理新檔案", elem_classes="flex-1 h-[44px] bg-zinc-100 text-[#1b1b1d] font-bold rounded-[10px] hover:bg-zinc-200 border-none")
 
-    # ── Event Wiring ─────────────────────────────────────────────
+        with gr.Column(elem_classes="pt-24 px-4 pb-4 max-w-2xl mx-auto w-full", elem_id="main-content-area"):
+            stats_html = gr.HTML("")
+
+            with gr.Row(elem_classes="mb-4 flex flex-row items-center justify-start px-2 mt-4"):
+                btn_select_all = gr.Button("全選", elem_id="btn-select-all", elem_classes="bg-transparent shadow-none border-none font-bold text-[15px]", scale=0, min_width=80)                
+                btn_clear_all = gr.Button("全取消", elem_id="btn-clear-all", elem_classes="bg-transparent shadow-none border-none font-bold text-[15px]", scale=0, min_width=80)
+                status_selected = gr.HTML('<span style="color:#9ab4d4;font-size:13px;font-weight:700;margin-left:auto;padding-right:8px;">已選 0 章節</span>', elem_id="status-selected")
+
+            chapter_checkboxes = gr.CheckboxGroup(label="", choices=[], elem_id="chapter-list", container=False)
+
+            with gr.Column(elem_classes="mt-8 mb-0 w-full", elem_id="bottom-action-bar"):
+                with gr.Column(elem_classes="w-full", elem_id="bottom-inner"):
+                    page_shift_slider = gr.Slider(
+                        minimum=-2, maximum=2, step=1, value=-1,
+                        label="封面頁校正 (預設 -1 頁)",
+                        elem_classes="mb-3"
+                    )
+                    btn_merge = gr.Button(
+                        "🔨 開始合併已選章節",
+                        elem_id="btn-merge",
+                        elem_classes="w-full h-[52px] font-bold rounded-[14px] border-none",
+                    )
+                    btn_final_download = gr.DownloadButton(
+                        "📥 下載合併後的檔案",
+                        visible=False,
+                        elem_id="btn-download",
+                        elem_classes="w-full h-[52px] font-bold rounded-[14px] border-none mt-3",
+                    )
+                    error_msg_results = gr.HTML("", visible=False)
+            
+                    btn_process_another = gr.Button(
+                        "處理新檔案",
+                        elem_id="btn-reset",
+                        elem_classes="w-full h-[44px] font-bold rounded-[10px] border-none mt-3",
+                    )
+    
+    # -- Event Wiring --------------------------------------------------
 
     detect_btn.click(
         fn=detect_chapters,
         inputs=[file_upload],
-        outputs=[screen_start, screen_results, chapter_checkboxes, error_msg_start, stats_html]
+        outputs=[screen_start, screen_results, chapter_checkboxes, error_msg_start, stats_html],
+        api_name=False,
+        show_progress="full"
     )
 
-    btn_select_all.click(fn=select_all, inputs=[], outputs=[chapter_checkboxes])
-    btn_clear_all.click(fn=clear_all, inputs=[], outputs=[chapter_checkboxes])
+    btn_select_all.click(
+        fn=select_all, 
+        inputs=[], 
+        outputs=[chapter_checkboxes], 
+        api_name=False
+    )
     
+    btn_clear_all.click(
+        fn=clear_all, 
+        inputs=[], 
+        outputs=[chapter_checkboxes], 
+        api_name=False
+    )
+
     chapter_checkboxes.change(
         fn=update_selection_count,
         inputs=[chapter_checkboxes],
-        outputs=[status_selected]
+        outputs=[status_selected],
+        api_name=False
     )
 
     btn_merge.click(
         fn=download_chapters,
         inputs=[chapter_checkboxes, page_shift_slider],
-        outputs=[btn_final_download, error_msg_results]
+        outputs=[btn_final_download, error_msg_results],
+        api_name=False,
+        show_progress="full"
     )
-
+    
     btn_process_another.click(
         fn=reset_to_start,
         inputs=[],
-        outputs=[screen_start, screen_results, file_upload]
+        outputs=[screen_start, screen_results, file_upload],
+        api_name=False
     )
 
 
 if __name__ == "__main__":
     out_dir = os.path.abspath("outputs")
     os.makedirs(out_dir, exist_ok=True)
-    demo.launch(
+    
+    # 啟用佇列系統以支援進度條
+    demo.queue(
+        max_size=20,
+        default_concurrency_limit=5
+    ).launch(
         server_name="0.0.0.0",
         server_port=7860,
         share=True,
-        inbrowser=True,
         allowed_paths=[out_dir],
+        show_api=False,
     )
